@@ -1,6 +1,6 @@
 module ocsjs-ai-answer-service
 
-go 1.26.4
+go 1.25.0
 
 require (
 	github.com/yuin/goldmark v1.8.2
