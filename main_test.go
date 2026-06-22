@@ -427,3 +427,105 @@ func TestFallbackModeWithConfidenceCascade(t *testing.T) {
 		t.Errorf("Expected final answer to be 'B', got '%s'", res["answer"])
 	}
 }
+
+func TestSearchModeFlow(t *testing.T) {
+	Config.OpenAIApiKey = "mock-key"
+	Config.OpenAIModel = "mock-gpt"
+	Config.MultiModelMode = "search"
+	Config.ExaApiKey = "mock-exa"
+	Config.EnableCache = false
+
+	var calledSearch = false
+	var initialQueryCalled = false
+	var retryQueryCalled = false
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Mock Exa Search Endpoint
+		if r.URL.Path == "/search" {
+			calledSearch = true
+			w.WriteHeader(http.StatusOK)
+			w.Write([]byte(`{
+				"results": [
+					{
+						"title": "Mock Exa Reference",
+						"url": "http://mock-exa.com",
+						"highlights": ["Correct answer is B"]
+					}
+				]
+			}`))
+			return
+		}
+
+		// Mock OpenAI Endpoint
+		bodyBytes, _ := io.ReadAll(r.Body)
+		bodyStr := string(bodyBytes)
+
+		// First OpenAI Request in Search Mode (Initial Answer with Exa context)
+		if strings.Contains(bodyStr, "Correct answer is B") && !strings.Contains(bodyStr, "上一次回答的答案是") {
+			initialQueryCalled = true
+			w.WriteHeader(http.StatusOK)
+			w.Write([]byte(`{
+				"choices": [
+					{
+						"message": {
+							"role": "assistant",
+							"content": "根据联网搜索结果，我无法直接确定这道题的正确答案是哪一个，建议重试。"
+						}
+					}
+				]
+			}`))
+			return
+		}
+
+		// Second OpenAI Request in Search Mode (Format-healing retry)
+		if strings.Contains(bodyStr, "上一次回答的答案是") && strings.Contains(bodyStr, "根据联网搜索结果，我无法直接确定") {
+			retryQueryCalled = true
+			w.WriteHeader(http.StatusOK)
+			w.Write([]byte(`{
+				"choices": [
+					{
+						"message": {
+							"role": "assistant",
+							"content": "B"
+						}
+					}
+				]
+			}`))
+			return
+		}
+
+		w.WriteHeader(http.StatusBadRequest)
+	}))
+	defer server.Close()
+
+	Config.OpenAIApiBase = server.URL
+	Config.ExaBaseUrl = server.URL
+	initHTTPClient()
+
+	req := httptest.NewRequest("POST", "/api/search", strings.NewReader(`{"title": "What is the answer?", "type": "single", "options": "A. Option A\nB. Option B"}`))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	handleSearch(w, req)
+
+	resp := w.Result()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("Expected HTTP 200, got %d", resp.StatusCode)
+	}
+
+	var res map[string]interface{}
+	json.NewDecoder(resp.Body).Decode(&res)
+
+	if !calledSearch {
+		t.Error("Expected Exa search to be called in search mode")
+	}
+	if !initialQueryCalled {
+		t.Error("Expected initial query to be called with Exa context")
+	}
+	if !retryQueryCalled {
+		t.Error("Expected format-healing retry query to be called due to invalid first answer format")
+	}
+	if res["answer"].(string) != "B" {
+		t.Errorf("Expected final formatted answer 'B', got '%s'", res["answer"])
+	}
+}

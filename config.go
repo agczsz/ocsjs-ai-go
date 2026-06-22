@@ -22,7 +22,7 @@ type ConfigStruct struct {
 	EnableCache        bool
 	CacheExpiration    int
 	Proxy              string  // Custom HTTP proxy URL
-	MultiModelMode     string  // standard, confidence, fallback
+	MultiModelMode     string  // standard, confidence, fallback, search
 	ConfidenceThreshold float64 // default 0.7
 	ExaApiKey          string  // Exa AI API key
 	ExaBaseUrl         string  // Exa AI API base url
@@ -130,7 +130,7 @@ func parseFlags() {
 	flagLogLevel := flag.String("log-level", Config.LogLevel, "Logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL)")
 	flagAccessToken := flag.String("token", Config.AccessToken, "Access token for authorization")
 	
-	flagMultiMode := flag.String("multi-mode", Config.MultiModelMode, "Multi-model mode: standard, confidence, fallback")
+	flagMultiMode := flag.String("multi-mode", Config.MultiModelMode, "Multi-model mode: standard, confidence, fallback, search")
 	flagThreshold := flag.Float64("threshold", Config.ConfidenceThreshold, "Confidence threshold for scoring mode")
 	flagExaKey := flag.String("exa-key", Config.ExaApiKey, "Exa AI API key")
 	flagApiBase1 := flag.String("api-base1", Config.ApiBase1, "Fallback model 1 API base URL")

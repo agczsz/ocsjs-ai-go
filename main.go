@@ -758,6 +758,84 @@ func answerWithConfidence(title, options, questionType string) (string, error) {
 	return finalAnswer, nil
 }
 
+func answerWithSearch(question, options, questionType string) (string, error) {
+	startTimeSearchMode := time.Now()
+	prompt := parseQuestionAndOptions(question, options, questionType)
+
+	var searchContext string
+	var err error
+
+	if Config.ExaApiKey != "" {
+		logInfo("[Search模式] 检测到 EXA_API_KEY，开始进行联网搜索...")
+		searchQuery := removePunctuation(question)
+		if options != "" && (questionType == "single" || questionType == "multiple") {
+			searchQuery += " " + removePunctuation(options)
+		}
+		searchContext, err = callExaSearch(searchQuery)
+		if err != nil {
+			logWarning("[Search模式] 联网搜索失败: %v, 将无搜索上下文直接提问", err)
+		} else {
+			logInfo("[Search模式] 联网搜索成功，获取到 %d 字节参考上下文", len(searchContext))
+		}
+	} else {
+		logWarning("[Search模式] 未配置 EXA_API_KEY，将跳过联网搜索直接提问")
+	}
+
+	var firstPrompt string
+	if searchContext != "" {
+		firstPrompt = fmt.Sprintf(`通过联网搜索获取到以下相关参考信息：
+
+%s
+
+---
+
+%s
+
+请根据搜索信息给出准确答案。`, searchContext, prompt)
+	} else {
+		firstPrompt = prompt
+	}
+
+	logInfo("[Search模式] 正在获取初始答案...")
+	firstAnswer, err := callOpenAIWithModel(Config.OpenAIApiBase, Config.OpenAIApiKey, firstPrompt, Config.OpenAIModel)
+	if err != nil {
+		return "", err
+	}
+	logInfo("[Search模式] 首次回答完成 (耗时: %.2fs), 答案: '%s'", time.Since(startTimeSearchMode).Seconds(), strings.TrimSpace(firstAnswer))
+
+	cleanedAns, isValid := cleanAndValidateAnswer(firstAnswer, questionType)
+	if isValid {
+		logInfo("[Search模式] 首次回答格式符合规范，答案: %s", cleanedAns)
+		return cleanedAns, nil
+	}
+
+	logWarning("[Search模式] 首次回答格式不规范: '%s'。进入第二次重试，提供第一次回答以总结/整理答案...", strings.TrimSpace(firstAnswer))
+
+	retryPrompt := fmt.Sprintf(`上一次回答的答案是：%s
+
+这不符合要求的格式。请根据上一次回答的答案以及原始问题，总结并直接给出正确格式的答案。不要包含任何解释。
+
+%s`, firstAnswer, prompt)
+
+	finalAnswer, err := callLLMWithValidation(
+		Config.OpenAIApiBase,
+		Config.OpenAIApiKey,
+		Config.OpenAIModel,
+		[]OpenAIMessage{
+			{Role: "system", Content: "你是一个答案整理助手。请提取上一次回答中的正确选项或答案，并严格按照要求的格式输出，不要有任何解释说明。"},
+			{Role: "user", Content: retryPrompt},
+		},
+		questionType,
+		2,
+		"Search模式二次重试",
+	)
+	if err != nil {
+		logWarning("[Search模式] 二次重试出错: %v, 回退到最佳清理答案", err)
+		return cleanedAns, nil
+	}
+	return finalAnswer, nil
+}
+
 func handleSearch(w http.ResponseWriter, r *http.Request) {
 	if !verifyAccessToken(r) {
 		writeJSON(w, http.StatusForbidden, map[string]interface{}{
@@ -824,6 +902,8 @@ func handleSearch(w http.ResponseWriter, r *http.Request) {
 	// Determine strategy based on MultiModelMode
 	if Config.MultiModelMode == "confidence" {
 		processedAnswer, err = answerWithConfidence(question, options, questionType)
+	} else if Config.MultiModelMode == "search" || Config.MultiModelMode == "exa" {
+		processedAnswer, err = answerWithSearch(question, options, questionType)
 	} else if Config.MultiModelMode == "fallback" {
 		// fallback mode logic
 		type FallbackConfig struct {
