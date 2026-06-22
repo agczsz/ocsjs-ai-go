@@ -1,1 +1,0 @@
-.\ocs_ai_answer_service.exe -api-base "https://api.stepfun.com/step_plan/v1" -api-key "5MJDT6ynrIKegD51l1LmDg51d85CYfiMXQ5DOXDMCdRnda4kMiNAg8UQX4Zqz9WVj" -model step-router-v1 -port 5000

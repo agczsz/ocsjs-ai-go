@@ -1,0 +1,28 @@
+# Binaries
+ocs_ai_answer_service
+ocs_ai_answer_service.exe
+ocs_ai_answer_service.exe~
+ocsjs-ai-answer-service
+ocsjs-ai-answer-service.exe
+
+# Environment
+.env
+
+# Logs
+logs/
+
+# Runtime data
+cache.db
+cache.db-shm
+cache.db-wal
+cache.json
+
+# IDE / editor artifacts
+.Rhistory
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
