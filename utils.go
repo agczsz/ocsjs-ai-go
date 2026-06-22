@@ -151,6 +151,15 @@ func parseQuestionAndOptions(question, options, questionType string) string {
 // extractAnswer cleans and extracts answer based on type
 func extractAnswer(aiResponse, questionType string) string {
 	trimmed := strings.TrimSpace(aiResponse)
+
+	// Strip reasoning model thinking blocks. Models like DeepSeek-R1,
+	// MiniMax-M3, and Qwen-QwQ wrap their chain-of-thought in <think>...</think>
+	// tags before the final answer. Without stripping, the OCS client sees the
+	// full reasoning text instead of just the answer.
+	if idx := strings.LastIndex(trimmed, "</think>"); idx != -1 {
+		trimmed = strings.TrimSpace(trimmed[idx+len("</think>"):])
+	}
+
 	if questionType == "multiple" {
 		lines := strings.Split(trimmed, "\n")
 		for _, line := range lines {
