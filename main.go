@@ -264,9 +264,27 @@ func callOpenAIWithModel(apiBase, apiKey, prompt, model string) (string, error) 
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+apiKey)
 
-	resp, err := httpClient.Do(req)
-	if err != nil {
-		return "", err
+	var resp *http.Response
+	var lastErr error
+
+	for attempt := 0; attempt < 3; attempt++ {
+		// Recreate the request body each attempt, since http.Client.Do
+		// consumes the reader. This ensures retries send the full payload.
+		req.Body = io.NopCloser(bytes.NewReader(jsonData))
+		resp, lastErr = httpClient.Do(req)
+		if lastErr != nil {
+			// Retry on transient network errors (EOF, timeout, connection reset).
+			// These are common when reasoning models stream over unstable proxies.
+			if attempt < 2 {
+				time.Sleep(time.Duration(1<<attempt) * time.Second)
+			}
+			continue
+		}
+		break
+	}
+
+	if lastErr != nil {
+		return "", lastErr
 	}
 	defer resp.Body.Close()
 
