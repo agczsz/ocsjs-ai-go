@@ -262,37 +262,54 @@ func callOpenAIWithModel(apiBase, apiKey, prompt, model string) (string, error) 
 	}
 
 	apiURL := strings.TrimSuffix(apiBase, "/") + "/chat/completions"
-	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
-	defer cancel()
-	req, err := http.NewRequestWithContext(ctx, "POST", apiURL, bytes.NewBuffer(jsonData))
-	if err != nil {
-		return "", err
+	for attempt := 0; attempt < 3; attempt++ {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Duration(Config.LLMTimeout)*time.Second)
+		req, err := http.NewRequestWithContext(ctx, "POST", apiURL, bytes.NewReader(jsonData))
+		if err != nil {
+			cancel()
+			return "", err
+		}
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Authorization", "Bearer "+apiKey)
+
+		resp, err := httpClient.Do(req)
+		if err != nil {
+			cancel()
+			// Retry on transient network errors (EOF, timeout, connection reset)
+			if attempt < 2 {
+				time.Sleep(time.Duration(1<<attempt) * time.Second)
+				continue
+			}
+			return "", err
+		}
+
+		if resp.StatusCode != http.StatusOK {
+			bodyBytes, _ := io.ReadAll(resp.Body)
+			resp.Body.Close()
+			cancel()
+			return "", fmt.Errorf("API error: status code %d, body: %s", resp.StatusCode, string(bodyBytes))
+		}
+
+		var respBody OpenAIResponse
+		err = json.NewDecoder(resp.Body).Decode(&respBody)
+		resp.Body.Close()
+		cancel()
+		if err != nil {
+			if attempt < 2 {
+				time.Sleep(time.Duration(1<<attempt) * time.Second)
+				continue
+			}
+			return "", err
+		}
+
+		if len(respBody.Choices) == 0 {
+			return "", fmt.Errorf("empty choices from API response")
+		}
+
+		return respBody.Choices[0].Message.Content, nil
 	}
 
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+apiKey)
-
-	resp, err := httpClient.Do(req)
-	if err != nil {
-		return "", err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		bodyBytes, _ := io.ReadAll(resp.Body)
-		return "", fmt.Errorf("API error: status code %d, body: %s", resp.StatusCode, string(bodyBytes))
-	}
-
-	var respBody OpenAIResponse
-	if err := json.NewDecoder(resp.Body).Decode(&respBody); err != nil {
-		return "", err
-	}
-
-	if len(respBody.Choices) == 0 {
-		return "", fmt.Errorf("empty choices from API response")
-	}
-
-	return respBody.Choices[0].Message.Content, nil
+	return "", fmt.Errorf("max retries exceeded")
 }
 
 func callOpenAIConfidence(answer, question, options string) (float64, error) {
@@ -327,7 +344,7 @@ func callOpenAIConfidence(answer, question, options string) (float64, error) {
 	}
 
 	apiURL := strings.TrimSuffix(Config.OpenAIApiBase, "/") + "/chat/completions"
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(Config.EvalTimeout)*time.Second)
 	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, "POST", apiURL, bytes.NewBuffer(jsonData))
 	if err != nil {
@@ -413,7 +430,7 @@ func callOpenAIConfidenceWithModel(apiBase, apiKey, model, answer, question, opt
 	}
 
 	apiURL := strings.TrimSuffix(apiBase, "/") + "/chat/completions"
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(Config.EvalTimeout)*time.Second)
 	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, "POST", apiURL, bytes.NewBuffer(jsonData))
 	if err != nil {
@@ -513,7 +530,7 @@ func callExaSearch(searchQuery string) (string, error) {
 		apiURL = strings.TrimSuffix(Config.ExaBaseUrl, "/") + "/search"
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(Config.EvalTimeout)*time.Second)
 	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, "POST", apiURL, bytes.NewBuffer(jsonData))
 	if err != nil {
@@ -578,7 +595,7 @@ func callLLMWithValidation(apiBase, apiKey, model string, messages []OpenAIMessa
 		}
 
 		apiURL := strings.TrimSuffix(apiBase, "/") + "/chat/completions"
-		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), time.Duration(Config.LLMTimeout)*time.Second)
 		req, err := http.NewRequestWithContext(ctx, "POST", apiURL, bytes.NewBuffer(jsonData))
 		if err != nil {
 			cancel()

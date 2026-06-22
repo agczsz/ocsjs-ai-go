@@ -24,6 +24,8 @@ type ConfigStruct struct {
 	Proxy              string  // Custom HTTP proxy URL
 	MultiModelMode     string  // standard, confidence, fallback
 	ConfidenceThreshold float64 // default 0.7
+	LLMTimeout         int     // LLM request timeout in seconds
+	EvalTimeout        int     // Confidence eval / search timeout in seconds
 	ExaApiKey          string  // Exa AI API key
 	ExaBaseUrl         string  // Exa AI API base url
 	ApiBase1           string  // Fallback API Base 1
@@ -103,6 +105,8 @@ func initConfig() {
 	// Multi-model and search configuration
 	Config.MultiModelMode = getEnv("MULTI_MODEL_MODE", "standard")
 	Config.ConfidenceThreshold = getEnvFloat("CONFIDENCE_THRESHOLD", 0.7)
+	Config.LLMTimeout = getEnvInt("LLM_TIMEOUT", 240)
+	Config.EvalTimeout = getEnvInt("EVAL_TIMEOUT", 30)
 	Config.ExaApiKey = getEnv("EXA_API_KEY", "")
 	Config.ExaBaseUrl = getEnv("EXA_BASE_URL", "https://api.exa.ai")
 	
