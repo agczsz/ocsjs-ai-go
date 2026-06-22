@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>EduBrain AI - 智能题库统计面板</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/datatables.net-bs5@1.13.8/css/dataTables.bootstrap5.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/datatables.net-responsive-bs5@2.5.0/css/responsive.bootstrap5.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <nav class="navbar navbar-expand-lg navbar-dark bg-primary">
+        <div class="container">
+            <a class="navbar-brand" href="/">EduBrain AI</a>
+            <div class="collapse navbar-collapse">
+                <ul class="navbar-nav me-auto">
+                    <li class="nav-item">
+                        <a class="nav-link" href="/dashboard">统计面板</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="/docs">API文档</a>
+                    </li>
+                </ul>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container mt-4">
+        <div class="row">
+            <div class="col-md-12">
+                <div class="card">
+                    <div class="card-header bg-primary text-white">
+                        <h5 class="card-title mb-0">系统信息</h5>
+                    </div>
+                    <div class="card-body">
+                        <p><strong>版本：</strong>{{ .Version }}</p>
+                        <p><strong>缓存状态：</strong>{{ if .CacheEnabled }}已启用{{ else }}未启用{{ end }}</p>
+                        <p><strong>缓存数量：</strong>{{ .CacheSize }}条</p>
+                        <p><strong>使用模型：</strong>{{ .Model }}</p>
+                        <p><strong>运行时长：</strong>{{ .Uptime }}</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="row mt-4">
+            <div class="col-md-12">
+                <div class="card">
+                    <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
+                        <h5 class="card-title mb-0">最近问答记录</h5>
+                        <button class="btn btn-light btn-sm" onclick="clearCache()">清除缓存</button>
+                    </div>
+                    <div class="card-body">
+                        <div class="table-responsive">
+                            <table id="qa-records" class="table table-striped table-hover dt-responsive nowrap" style="width:100%">
+                                <thead>
+                                    <tr>
+                                        <th>时间</th>
+                                        <th>问题类型</th>
+                                        <th>问题内容</th>
+                                        <th>选项</th>
+                                        <th>AI答案</th>
+                                        <th>操作</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {{ range .Records }}
+                                    <tr>
+                                        <td data-order="{{ .Timestamp }}">{{ .Time }}</td>
+                                        <td>{{ .Type }}</td>
+                                        <td>
+                                            <div class="text-truncate" style="max-width: 300px;" title="{{ .Question }}">
+                                                {{ .Question }}
+                                            </div>
+                                        </td>
+                                        <td>
+                                            <div class="text-truncate" style="max-width: 200px;" title="{{ .Options }}">
+                                                {{ .Options }}
+                                            </div>
+                                        </td>
+                                        <td>
+                                            <div class="text-truncate" style="max-width: 200px;" title="{{ .Answer }}">
+                                                {{ .Answer }}
+                                            </div>
+                                        </td>
+                                        <td>
+                                            <button class="btn btn-sm btn-info" onclick="showDetail('{{.Question}}', '{{.Options}}', '{{.Answer}}')">详情</button>
+                                        </td>
+                                    </tr>
+                                    {{ end }}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <footer class="footer mt-5 py-3 bg-light">
+        <div class="container text-center">
+            <p>EduBrain AI - 智能题库系统 v{{ .Version }}</p>
+            <p>Powered by OpenAI API | 作者：LynnGuo666</p>
+            <p><small>© 2024-2025 All Rights Reserved</small></p>
+        </div>
+    </footer>
+
+    <!-- Modal -->
+    <div class="modal fade" id="detailModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">问答详情</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <h6>问题：</h6>
+                        <pre class="border rounded p-3 bg-light" id="modal-question"></pre>
+                    </div>
+                    <div class="mb-3">
+                        <h6>选项：</h6>
+                        <pre class="border rounded p-3 bg-light" id="modal-options"></pre>
+                    </div>
+                    <div class="mb-3">
+                        <h6>答案：</h6>
+                        <pre class="border rounded p-3 bg-light" id="modal-answer"></pre>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/jquery@3.7.1/dist/jquery.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/datatables.net@1.13.8/js/jquery.dataTables.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/datatables.net-bs5@1.13.8/js/dataTables.bootstrap5.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/datatables.net-responsive@2.5.0/js/dataTables.responsive.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/datatables.net-responsive-bs5@2.5.0/js/responsive.bootstrap5.min.js"></script>
+
+    <script>
+    $(document).ready(function() {
+        $('#qa-records').DataTable({
+            responsive: true,
+            order: [[0, 'desc']],
+            language: {
+                url: 'https://cdn.datatables.net/plug-ins/1.13.8/i18n/zh.json'
+            },
+            pageLength: 10,
+            lengthMenu: [[10, 25, 50, 100], [10, 25, 50, 100]]
+        });
+    });
+
+    function clearCache() {
+        if (confirm('确定要清除所有缓存吗？')) {
+            fetch('/api/cache/clear', {
+                method: 'POST',
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    alert('缓存已清除');
+                    location.reload();
+                } else {
+                    alert('清除缓存失败: ' + data.message);
+                }
+            })
+            .catch(error => {
+                alert('操作失败: ' + error);
+            });
+        }
+    }
+
+    function showDetail(question, options, answer) {
+        document.getElementById('modal-question').textContent = question;
+        document.getElementById('modal-options').textContent = options || '无';
+        document.getElementById('modal-answer').textContent = answer;
+        new bootstrap.Modal(document.getElementById('detailModal')).show();
+    }
+    </script>
+</body>
+</html>
