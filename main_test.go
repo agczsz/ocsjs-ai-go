@@ -204,6 +204,9 @@ func TestCleanAndValidateAnswer(t *testing.T) {
 		{"对", "judgement", "正确", true},
 		{"错误", "judgement", "错误", true},
 		{"", "single", "", false},
+		{"<think>some thoughts</think>A", "single", "A", true},
+		{"<think>blah\nblah</think>Option B is correct", "single", "B", true},
+		{"<think>thought</think>对", "judgement", "正确", true},
 	}
 
 	for _, tt := range tests {
@@ -329,8 +332,23 @@ func TestFallbackModeWithConfidenceCascade(t *testing.T) {
 		bodyBytes, _ := io.ReadAll(r.Body)
 		bodyStr := string(bodyBytes)
 
-		// Model 1 initial answer
+		// Model 1 initial answer or confidence self-evaluation
 		if strings.Contains(bodyStr, `"model":"model-1-answering"`) {
+			if strings.Contains(bodyStr, "评估这个答案") {
+				calledEval = true
+				w.WriteHeader(http.StatusOK)
+				w.Write([]byte(`{
+					"choices": [
+						{
+							"message": {
+								"role": "assistant",
+								"content": "0.5"
+							}
+						}
+					]
+				}`))
+				return
+			}
 			w.WriteHeader(http.StatusOK)
 			w.Write([]byte(`{
 				"choices": [
@@ -338,23 +356,6 @@ func TestFallbackModeWithConfidenceCascade(t *testing.T) {
 						"message": {
 							"role": "assistant",
 							"content": "A"
-						}
-					}
-				]
-			}`))
-			return
-		}
-
-		// Model 2 confidence evaluation of Model 1's answer
-		if strings.Contains(bodyStr, `"model":"model-2-evaluating-and-searching"`) && strings.Contains(bodyStr, "评估这个答案") {
-			calledEval = true
-			w.WriteHeader(http.StatusOK)
-			w.Write([]byte(`{
-				"choices": [
-					{
-						"message": {
-							"role": "assistant",
-							"content": "0.5"
 						}
 					}
 				]

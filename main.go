@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"database/sql"
 	"embed"
 	"encoding/json"
@@ -186,6 +187,11 @@ func validateAnswer(answer, questionType string) bool {
 }
 
 func cleanAndValidateAnswer(aiResponse, questionType string) (string, bool) {
+	// Strip <think>...</think> block if present
+	thinkReg := regexp.MustCompile(`(?s)<think>.*?</think>`)
+	aiResponse = thinkReg.ReplaceAllString(aiResponse, "")
+	aiResponse = strings.TrimSpace(aiResponse)
+
 	ans := extractAnswer(aiResponse, questionType)
 	ans = strings.TrimSpace(ans)
 	
@@ -256,7 +262,9 @@ func callOpenAIWithModel(apiBase, apiKey, prompt, model string) (string, error) 
 	}
 
 	apiURL := strings.TrimSuffix(apiBase, "/") + "/chat/completions"
-	req, err := http.NewRequest("POST", apiURL, bytes.NewBuffer(jsonData))
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, "POST", apiURL, bytes.NewBuffer(jsonData))
 	if err != nil {
 		return "", err
 	}
@@ -319,7 +327,9 @@ func callOpenAIConfidence(answer, question, options string) (float64, error) {
 	}
 
 	apiURL := strings.TrimSuffix(Config.OpenAIApiBase, "/") + "/chat/completions"
-	req, err := http.NewRequest("POST", apiURL, bytes.NewBuffer(jsonData))
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, "POST", apiURL, bytes.NewBuffer(jsonData))
 	if err != nil {
 		return 0.5, err
 	}
@@ -347,6 +357,10 @@ func callOpenAIConfidence(answer, question, options string) (float64, error) {
 	}
 
 	valStr := strings.TrimSpace(respBody.Choices[0].Message.Content)
+	thinkReg := regexp.MustCompile(`(?s)<think>.*?</think>`)
+	valStr = thinkReg.ReplaceAllString(valStr, "")
+	valStr = strings.TrimSpace(valStr)
+
 	val, err := strconv.ParseFloat(valStr, 64)
 	if err != nil {
 		reg := regexp.MustCompile(`0\.\d+|1\.0|0|1`)
@@ -399,7 +413,9 @@ func callOpenAIConfidenceWithModel(apiBase, apiKey, model, answer, question, opt
 	}
 
 	apiURL := strings.TrimSuffix(apiBase, "/") + "/chat/completions"
-	req, err := http.NewRequest("POST", apiURL, bytes.NewBuffer(jsonData))
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, "POST", apiURL, bytes.NewBuffer(jsonData))
 	if err != nil {
 		return 0.5, err
 	}
@@ -427,6 +443,10 @@ func callOpenAIConfidenceWithModel(apiBase, apiKey, model, answer, question, opt
 	}
 
 	valStr := strings.TrimSpace(respBody.Choices[0].Message.Content)
+	thinkReg := regexp.MustCompile(`(?s)<think>.*?</think>`)
+	valStr = thinkReg.ReplaceAllString(valStr, "")
+	valStr = strings.TrimSpace(valStr)
+
 	val, err := strconv.ParseFloat(valStr, 64)
 	if err != nil {
 		reg := regexp.MustCompile(`0\.\d+|1\.0|0|1`)
@@ -493,7 +513,9 @@ func callExaSearch(searchQuery string) (string, error) {
 		apiURL = strings.TrimSuffix(Config.ExaBaseUrl, "/") + "/search"
 	}
 
-	req, err := http.NewRequest("POST", apiURL, bytes.NewBuffer(jsonData))
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, "POST", apiURL, bytes.NewBuffer(jsonData))
 	if err != nil {
 		return "", err
 	}
@@ -556,8 +578,10 @@ func callLLMWithValidation(apiBase, apiKey, model string, messages []OpenAIMessa
 		}
 
 		apiURL := strings.TrimSuffix(apiBase, "/") + "/chat/completions"
-		req, err := http.NewRequest("POST", apiURL, bytes.NewBuffer(jsonData))
+		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+		req, err := http.NewRequestWithContext(ctx, "POST", apiURL, bytes.NewBuffer(jsonData))
 		if err != nil {
+			cancel()
 			lastErr = err
 			continue
 		}
@@ -567,6 +591,7 @@ func callLLMWithValidation(apiBase, apiKey, model string, messages []OpenAIMessa
 
 		resp, err := httpClient.Do(req)
 		if err != nil {
+			cancel()
 			lastErr = err
 			if attempt < maxRetries-1 {
 				time.Sleep(time.Duration(1<<attempt) * time.Second)
@@ -577,6 +602,7 @@ func callLLMWithValidation(apiBase, apiKey, model string, messages []OpenAIMessa
 		if resp.StatusCode != http.StatusOK {
 			bodyBytes, _ := io.ReadAll(resp.Body)
 			resp.Body.Close()
+			cancel()
 			lastErr = fmt.Errorf("status code %d, body: %s", resp.StatusCode, string(bodyBytes))
 			if attempt < maxRetries-1 {
 				time.Sleep(time.Duration(1<<attempt) * time.Second)
@@ -587,6 +613,7 @@ func callLLMWithValidation(apiBase, apiKey, model string, messages []OpenAIMessa
 		var respBody OpenAIResponse
 		err = json.NewDecoder(resp.Body).Decode(&respBody)
 		resp.Body.Close()
+		cancel()
 		if err != nil {
 			lastErr = err
 			continue
@@ -968,13 +995,12 @@ func handleSearch(w http.ResponseWriter, r *http.Request) {
 
 			// Check if there is a next model to evaluate confidence
 			if idx+1 < len(fallbackConfigs) {
-				nextCfg := fallbackConfigs[idx+1]
-				logInfo("[Fallback模式] 正在使用下一顺位模型 %s 评估模型 %s 的答案置信度...", nextCfg.Model, mCfg.Model)
+				logInfo("[Fallback模式] 正在使用模型 %s 自行评估其答案置信度...", mCfg.Model)
 				
 				confidence, confErr := callOpenAIConfidenceWithModel(
-					nextCfg.ApiBase,
-					nextCfg.ApiKey,
-					nextCfg.Model,
+					mCfg.ApiBase,
+					mCfg.ApiKey,
+					mCfg.Model,
 					currentAnswer,
 					question,
 					options,
