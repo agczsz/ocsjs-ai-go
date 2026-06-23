@@ -600,7 +600,7 @@ func callLLMWithValidation(apiBase, apiKey, model string, messages []OpenAIMessa
 		reqBody := OpenAIRequest{
 			Model:       model,
 			Temperature: 0.3,
-			MaxTokens:   500,
+			MaxTokens:   Config.MaxTokens,
 			Messages:    messages,
 		}
 
@@ -969,7 +969,7 @@ func handleSearch(w http.ResponseWriter, r *http.Request) {
 	// Determine strategy based on MultiModelMode
 	if Config.MultiModelMode == "confidence" {
 		processedAnswer, err = answerWithConfidence(question, options, questionType)
-	} else if Config.MultiModelMode == "search" || Config.MultiModelMode == "exa" {
+	} else if Config.MultiModelMode == "search" || Config.MultiModelMode == "exa" || Config.MultiModelMode == "allexa" {
 		processedAnswer, err = answerWithSearch(question, options, questionType)
 	} else if Config.MultiModelMode == "fallback" {
 		// fallback mode logic

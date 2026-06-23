@@ -1,0 +1,1 @@
+.\ocs_ai_answer_service.exe -api-base "https://api.evomap.ai/v1" -api-key "sk-evomap-bbnt4huac5x51wku7a0f90bbf2bc45a09bfb714a4907edbc" -model evomap-deepseek-v4-flash -port 5000

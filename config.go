@@ -94,7 +94,7 @@ func initConfig() {
 	Config.LogLevel = getEnv("LOG_LEVEL", "INFO")
 	Config.AccessToken = getEnv("ACCESS_TOKEN", "")
 
-	Config.MaxTokens = getEnvInt("MAX_TOKENS", 500)
+	Config.MaxTokens = getEnvInt("MAX_TOKENS", 4096)
 	Config.Temperature = getEnvFloat("TEMPERATURE", 0.7)
 
 	Config.EnableCache = getEnvBool("ENABLE_CACHE", true)
@@ -134,7 +134,7 @@ func parseFlags() {
 	flagLogLevel := flag.String("log-level", Config.LogLevel, "Logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL)")
 	flagAccessToken := flag.String("token", Config.AccessToken, "Access token for authorization")
 	
-	flagMultiMode := flag.String("multi-mode", Config.MultiModelMode, "Multi-model mode: standard, confidence, fallback, search")
+	flagMultiMode := flag.String("multi-mode", Config.MultiModelMode, "Multi-model mode: standard, confidence, fallback, search, allexa")
 	flagThreshold := flag.Float64("threshold", Config.ConfidenceThreshold, "Confidence threshold for scoring mode")
 	flagExaKey := flag.String("exa-key", Config.ExaApiKey, "Exa AI API key")
 	flagApiBase1 := flag.String("api-base1", Config.ApiBase1, "Fallback model 1 API base URL")
