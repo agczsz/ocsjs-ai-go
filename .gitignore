@@ -1,0 +1,23 @@
+# Linux binary (Windows .exe is intentionally kept as pre-built artifact for users)
+ocs_ai_answer_service
+
+# Environment file with secrets
+.env
+
+# Runtime SQLite transient files (cache.db is the seeded question bank, keep it)
+cache.db-shm
+cache.db-wal
+
+# Logs
+logs/
+*.log
+
+# IDE / editor artifacts
+.Rhistory
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
