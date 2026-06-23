@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode"
 )
 
 var (
@@ -184,4 +185,39 @@ func truncateString(s string, l int) string {
 		return string(r[:l])
 	}
 	return s
+}
+
+// detectLanguage returns "zh" if the text is predominantly Chinese, otherwise "en".
+// It checks the fraction of CJK (Chinese/Japanese/Korean) characters in the input.
+func detectLanguage(text string) string {
+	var total, cjk int
+	for _, r := range text {
+		if !unicode.IsSpace(r) && !unicode.IsPunct(r) {
+			total++
+			// CJK Unified Ideographs and extensions
+			if unicode.In(r, unicode.Han) {
+				cjk++
+			}
+		}
+	}
+	if total == 0 {
+		return "zh"
+	}
+	if float64(cjk)/float64(total) >= 0.15 {
+		return "zh"
+	}
+	return "en"
+}
+
+// buildLanguageHint returns a hint string reminding the model to answer in the
+// same language as the question / options, for injection into prompts.
+func buildLanguageHint(question, options string) string {
+	text := question
+	if options != "" {
+		text += " " + options
+	}
+	if detectLanguage(text) == "zh" {
+		return "注意：无论参考信息是什么语言，你的答案必须与题目和选项使用同一种语言（中文）。"
+	}
+	return "Note: Regardless of the language of the reference information, your answer must be in the same language as the question and options."
 }

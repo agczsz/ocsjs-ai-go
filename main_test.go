@@ -51,6 +51,12 @@ func TestFallbackMode(t *testing.T) {
 	defer server.Close()
 
 	Config.OpenAIApiBase = server.URL
+	Config.ApiBase1 = server.URL
+	Config.ApiKey1 = "mock-key"
+	Config.ApiBase2 = server.URL
+	Config.ApiKey2 = "mock-key"
+	Config.ApiBase3 = ""
+	Config.Model3 = ""
 	initHTTPClient()
 
 	// Perform a mock handleSearch request
@@ -478,7 +484,7 @@ func TestSearchModeFlow(t *testing.T) {
 		}
 
 		// Second OpenAI Request in Search Mode (Format-healing retry)
-		if strings.Contains(bodyStr, "上一次回答的答案是") && strings.Contains(bodyStr, "根据联网搜索结果，我无法直接确定") {
+		if strings.Contains(bodyStr, "上一次的完整回答") && strings.Contains(bodyStr, "根据联网搜索结果，我无法直接确定") {
 			retryQueryCalled = true
 			w.WriteHeader(http.StatusOK)
 			w.Write([]byte(`{

@@ -262,8 +262,12 @@ func callOpenAIWithModel(apiBase, apiKey, prompt, model string) (string, error) 
 	}
 
 	apiURL := strings.TrimSuffix(apiBase, "/") + "/chat/completions"
+	llmTimeout0 := Config.LLMTimeout
+	if llmTimeout0 <= 0 {
+		llmTimeout0 = 60
+	}
 	for attempt := 0; attempt < 3; attempt++ {
-		ctx, cancel := context.WithTimeout(context.Background(), time.Duration(Config.LLMTimeout)*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), time.Duration(llmTimeout0)*time.Second)
 		req, err := http.NewRequestWithContext(ctx, "POST", apiURL, bytes.NewReader(jsonData))
 		if err != nil {
 			cancel()
@@ -344,7 +348,11 @@ func callOpenAIConfidence(answer, question, options string) (float64, error) {
 	}
 
 	apiURL := strings.TrimSuffix(Config.OpenAIApiBase, "/") + "/chat/completions"
-	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(Config.EvalTimeout)*time.Second)
+	evalTimeout := Config.EvalTimeout
+	if evalTimeout <= 0 {
+		evalTimeout = 20
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(evalTimeout)*time.Second)
 	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, "POST", apiURL, bytes.NewBuffer(jsonData))
 	if err != nil {
@@ -430,7 +438,11 @@ func callOpenAIConfidenceWithModel(apiBase, apiKey, model, answer, question, opt
 	}
 
 	apiURL := strings.TrimSuffix(apiBase, "/") + "/chat/completions"
-	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(Config.EvalTimeout)*time.Second)
+	evalTimeout3 := Config.EvalTimeout
+	if evalTimeout3 <= 0 {
+		evalTimeout3 = 20
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(evalTimeout3)*time.Second)
 	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, "POST", apiURL, bytes.NewBuffer(jsonData))
 	if err != nil {
@@ -530,7 +542,11 @@ func callExaSearch(searchQuery string) (string, error) {
 		apiURL = strings.TrimSuffix(Config.ExaBaseUrl, "/") + "/search"
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(Config.EvalTimeout)*time.Second)
+	exaTimeout2 := Config.EvalTimeout
+	if exaTimeout2 <= 0 {
+		exaTimeout2 = 20
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(exaTimeout2)*time.Second)
 	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, "POST", apiURL, bytes.NewBuffer(jsonData))
 	if err != nil {
@@ -595,7 +611,11 @@ func callLLMWithValidation(apiBase, apiKey, model string, messages []OpenAIMessa
 		}
 
 		apiURL := strings.TrimSuffix(apiBase, "/") + "/chat/completions"
-		ctx, cancel := context.WithTimeout(context.Background(), time.Duration(Config.LLMTimeout)*time.Second)
+		llmTimeout := Config.LLMTimeout
+		if llmTimeout <= 0 {
+			llmTimeout = 60
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), time.Duration(llmTimeout)*time.Second)
 		req, err := http.NewRequestWithContext(ctx, "POST", apiURL, bytes.NewBuffer(jsonData))
 		if err != nil {
 			cancel()
@@ -779,6 +799,10 @@ func answerWithSearch(question, options, questionType string) (string, error) {
 	startTimeSearchMode := time.Now()
 	prompt := parseQuestionAndOptions(question, options, questionType)
 
+	// Detect language of the question/options to instruct model accordingly
+	langHint := buildLanguageHint(question, options)
+	lang := detectLanguage(question + " " + options)
+
 	var searchContext string
 	var err error
 
@@ -791,6 +815,7 @@ func answerWithSearch(question, options, questionType string) (string, error) {
 		searchContext, err = callExaSearch(searchQuery)
 		if err != nil {
 			logWarning("[Search模式] 联网搜索失败: %v, 将无搜索上下文直接提问", err)
+			searchContext = ""
 		} else {
 			logInfo("[Search模式] 联网搜索成功，获取到 %d 字节参考上下文", len(searchContext))
 		}
@@ -800,17 +825,10 @@ func answerWithSearch(question, options, questionType string) (string, error) {
 
 	var firstPrompt string
 	if searchContext != "" {
-		firstPrompt = fmt.Sprintf(`通过联网搜索获取到以下相关参考信息：
-
-%s
-
----
-
-%s
-
-请根据搜索信息给出准确答案。`, searchContext, prompt)
+		firstPrompt = fmt.Sprintf("通过联网搜索获取到以下相关参考信息（搜索结果可能为英文，请以题目和选项语言作答）：\n\n%s\n\n---\n\n%s\n\n%s",
+			searchContext, prompt, langHint)
 	} else {
-		firstPrompt = prompt
+		firstPrompt = fmt.Sprintf("%s\n\n%s", prompt, langHint)
 	}
 
 	logInfo("[Search模式] 正在获取初始答案...")
@@ -828,18 +846,50 @@ func answerWithSearch(question, options, questionType string) (string, error) {
 
 	logWarning("[Search模式] 首次回答格式不规范: '%s'。进入第二次重试，提供第一次回答以总结/整理答案...", strings.TrimSpace(firstAnswer))
 
-	retryPrompt := fmt.Sprintf(`上一次回答的答案是：%s
+	// Build format instruction for retry based on question type and language
+	var formatHint string
+	switch questionType {
+	case "single":
+		if lang == "zh" {
+			formatHint = "请仅返回正确答案的选项字母（如A、B、C、D），不要有其他任何内容。"
+		} else {
+			formatHint = "Return only the letter of the correct option (e.g. A, B, C, D), nothing else."
+		}
+	case "multiple":
+		if lang == "zh" {
+			formatHint = "请返回所有正确答案的选项字母，用#号分隔（如A#C#D），不要有其他任何内容。"
+		} else {
+			formatHint = "Return all correct option letters separated by # (e.g. A#C#D), nothing else."
+		}
+	case "judgement":
+		formatHint = "请仅返回\"正确\"或\"错误\"，不要有其他任何内容。"
+	default:
+		if lang == "zh" {
+			formatHint = "请用中文直接给出答案，不要有其他解释。"
+		} else {
+			formatHint = "Give the answer directly, no explanation."
+		}
+	}
 
-这不符合要求的格式。请根据上一次回答的答案以及原始问题，总结并直接给出正确格式的答案。不要包含任何解释。
+	retrySystemPrompt := fmt.Sprintf(
+		"你是一个答案整理助手。从上一次回答中提取正确答案，严格按照指定格式输出。%s %s",
+		formatHint, langHint,
+	)
 
-%s`, firstAnswer, prompt)
+	retryPrompt := fmt.Sprintf(`原始题目：
+%s
+
+上一次的完整回答（内容可能正确，但格式不符合要求）：
+%s
+
+请从上述回答中提取正确答案，直接输出。%s %s`, prompt, firstAnswer, formatHint, langHint)
 
 	finalAnswer, err := callLLMWithValidation(
 		Config.OpenAIApiBase,
 		Config.OpenAIApiKey,
 		Config.OpenAIModel,
 		[]OpenAIMessage{
-			{Role: "system", Content: "你是一个答案整理助手。请提取上一次回答中的正确选项或答案，并严格按照要求的格式输出，不要有任何解释说明。"},
+			{Role: "system", Content: retrySystemPrompt},
 			{Role: "user", Content: retryPrompt},
 		},
 		questionType,
